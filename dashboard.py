@@ -283,14 +283,15 @@ with tabs[1]:
 
     @st.cache_data
     def prep_lisa():
-        import geopandas as _gpd
-        gdf = _gpd.read_file("data/lisa_clusters.geojson")
-        gdf = gdf.to_crs(epsg=4326)
-        gdf['ingreso_fmt'] = (gdf['ingreso_autonomo'] / 1e3).round(0).astype(int).astype(str) + "K"
-        return gdf
-
-    gdf_lisa = prep_lisa()
-    geoj = _json.loads(gdf_lisa.to_json())
+        with open("data/lisa_clusters.geojson", encoding="utf-8") as f:
+            raw = _json.load(f)
+        features, rows = [], []
+        for i, feat in enumerate(raw["features"]):
+            features.append({**feat, "id": str(i)})
+            rows.append({"_idx": i, **feat.get("properties", {})})
+        df = pd.DataFrame(rows).set_index("_idx")
+        df['ingreso_fmt'] = (df['ingreso_autonomo'] / 1e3).round(0).astype(int).astype(str) + "K"
+        return df, features
 
     LISA_COLORS = {"High-High": C_Q5, "Low-Low": C_Q1, "Low-High": "#d8a23a",
                    "High-Low": "#d8a23a", "No Significativo": "#3a3f5c"}
@@ -298,41 +299,44 @@ with tabs[1]:
                    "Low-High": "Caso atípico", "High-Low": "Caso atípico",
                    "No Significativo": "Sin patrón claro"}
 
-    gdf_lisa['color'] = gdf_lisa['cluster'].map(LISA_COLORS)
-    gdf_lisa['label'] = gdf_lisa['cluster'].map(LISA_LABELS)
-
-    fig = go.Figure()
-    for cluster_type in ["High-High", "Low-Low", "Low-High", "High-Low", "No Significativo"]:
-        sub = gdf_lisa[gdf_lisa['cluster'] == cluster_type]
-        if len(sub) == 0:
-            continue
-        sub_geoj = _json.loads(sub.to_json())
-        fig.add_trace(go.Choroplethmapbox(
-            geojson=sub_geoj,
-            locations=sub.index.astype(str),
-            featureidkey="id",
-            z=[1]*len(sub),
-            showscale=False,
-            marker=dict(opacity=0.75, line=dict(width=0.3, color="#222")),
-            colorscale=[[0, LISA_COLORS[cluster_type]], [1, LISA_COLORS[cluster_type]]],
-            name=LISA_LABELS[cluster_type],
-            text=sub['Comuna'] + "<br>Ingreso: $" + sub['ingreso_fmt'],
-            hovertemplate="%{text}<br>" + LISA_LABELS[cluster_type] + "<extra></extra>",
-        ))
-
-    fig.update_layout(
-        mapbox=dict(style="carto-darkmatter", center=dict(lat=-35.5, lon=-71.5), zoom=3.8),
-        height=620, margin=dict(l=0, r=0, t=50, b=0),
-        font=FONT, paper_bgcolor=PLOT_BG, plot_bgcolor=PLOT_BG,
-        title=dict(text="Clústers de Moran Local — Ingreso autónomo por comuna",
-                   font=dict(size=17, color="#eef1ff")),
-        legend=dict(orientation="h", yanchor="bottom", y=-0.05, xanchor="center", x=0.5,
-                    bgcolor="rgba(0,0,0,0)", font=dict(color="#ffffff")),
-    )
-    st.plotly_chart(fig, width='stretch')
-    st.info("Las comunas verdes (High-High) forman clústers de alto ingreso; las rojas (Low-Low) "
-            "concentran comunas de bajo ingreso rodeadas de vecinas también pobres. "
-            "Los casos atípicos (amarillo) son comunas que rompen el patrón de su entorno.")
+    try:
+        df_lisa, features_lisa = prep_lisa()
+        fig = go.Figure()
+        for cluster_type in ["High-High", "Low-Low", "Low-High", "High-Low", "No Significativo"]:
+            sub_idx = df_lisa[df_lisa['cluster'] == cluster_type].index.tolist()
+            if not sub_idx:
+                continue
+            sub = df_lisa.loc[sub_idx]
+            sub_geoj = {"type": "FeatureCollection",
+                        "features": [features_lisa[i] for i in sub_idx]}
+            fig.add_trace(go.Choroplethmapbox(
+                geojson=sub_geoj,
+                locations=[str(i) for i in sub_idx],
+                featureidkey="id",
+                z=[1]*len(sub_idx),
+                showscale=False,
+                marker=dict(opacity=0.75, line=dict(width=0.3, color="#222")),
+                colorscale=[[0, LISA_COLORS[cluster_type]], [1, LISA_COLORS[cluster_type]]],
+                name=LISA_LABELS[cluster_type],
+                text=sub['Comuna'] + "<br>Ingreso: $" + sub['ingreso_fmt'],
+                hovertemplate="%{text}<br>" + LISA_LABELS[cluster_type] + "<extra></extra>",
+            ))
+        fig.update_layout(
+            mapbox=dict(style="carto-darkmatter", center=dict(lat=-35.5, lon=-71.5), zoom=3.8),
+            height=620, margin=dict(l=0, r=0, t=50, b=0),
+            font=FONT, paper_bgcolor=PLOT_BG, plot_bgcolor=PLOT_BG,
+            title=dict(text="Clústers de Moran Local — Ingreso autónomo por comuna",
+                       font=dict(size=17, color="#eef1ff")),
+            legend=dict(orientation="h", yanchor="bottom", y=-0.05, xanchor="center", x=0.5,
+                        bgcolor="rgba(0,0,0,0)", font=dict(color="#ffffff")),
+        )
+        st.plotly_chart(fig, width='stretch')
+        st.info("Las comunas verdes (High-High) forman clústers de alto ingreso; las rojas (Low-Low) "
+                "concentran comunas de bajo ingreso rodeadas de vecinas también pobres. "
+                "Los casos atípicos (amarillo) son comunas que rompen el patrón de su entorno.")
+    except FileNotFoundError:
+        st.warning("El archivo `data/lisa_clusters.geojson` no está disponible. "
+                   "Agrégalo a la carpeta `data/` para visualizar el mapa LISA.")
 
 # ---- 3. Crecimiento por educación ----
 with tabs[2]:
