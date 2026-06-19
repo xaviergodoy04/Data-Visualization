@@ -58,6 +58,19 @@ FONT = dict(family="Inter, Segoe UI, sans-serif", color="#ffffff")
 
 PARQUET = "data/casen_2024.parquet"
 
+# Only load the columns actually used — full 877-col DataFrame exceeds Streamlit Cloud's 1 GB limit
+NEEDED_COLS = [
+    'qaut', 'expr',
+    'yautcorh', 'v13', 'v13_propia', 'v17', 'v18',
+    'ytrabajocor', 'educc',
+    'ytotcor', 'edad', 'sexo',
+    'hh_d_esc', 'hh_d_acc', 'hh_d_ali', 'hh_d_contprev', 'hh_d_dpf',
+    'hh_d_actsub', 'hh_d_inf', 'hh_d_jub', 'hh_d_cui', 'hh_d_defcuali',
+    'hh_d_defcuanti', 'hh_d_medio', 'hh_d_conec', 'hh_d_seg',
+    'ind_estado', 'v12', 'v35a', 'v35c',
+    'rama1',
+]
+
 
 def _layout(fig, titulo, alto=420):
     fig.update_layout(
@@ -78,7 +91,7 @@ def _layout(fig, titulo, alto=420):
 # ----------------------------------------------------------------------
 @st.cache_data(show_spinner="Cargando CASEN 2024…")
 def load_data():
-    return pd.read_parquet(PARQUET)
+    return pd.read_parquet(PARQUET, columns=NEEDED_COLS)
 
 
 @st.cache_data
